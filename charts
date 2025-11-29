@@ -1,0 +1,109 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from ucimlrepo import fetch_ucirepo
+
+# --- 1. DATA LOADING AND CLEANING ---
+
+# Fetch the dataset
+# Note: Ensure you have the 'ucimlrepo' library installed if you run this script outside of a pre-configured environment.
+try:
+    drug_consumption_quantified = fetch_ucirepo(id=373)
+    df = pd.concat([drug_consumption_quantified.data.features, drug_consumption_quantified.data.targets], axis=1)
+except Exception as e:
+    print(f"Could not fetch dataset directly. Please ensure 'ucimlrepo' is installed or load the data manually. Error: {e}")
+    # Create a mock DataFrame structure for demonstration if fetch fails
+    # In a real environment, you would load a CSV here.
+    df = pd.DataFrame(columns=[
+        'age', 'gender', 'education', 'country', 'ethnicity', 'nscore', 'escore', 
+        'oscore', 'ascore', 'cscore', 'impulsive', 'ss', 'cannabis'
+    ])
+    # Placeholder data for demonstration purposes
+    # If the user is running this locally, they must load their actual data.
+    if df.empty:
+        print("Using placeholder data for demonstration. Please load your actual data.")
+        data = {
+            'age': [0.49788, 0.49788, -0.07854, 0.49788, 0.49788, -0.95197],
+            'nscore': [-0.67825, -0.46725, 1.34110, -0.27104, -0.27104, 1.45521],
+            'oscore': [-0.84732, -1.09207, 0.80157, -0.01729, -0.01729, -1.60914],
+            'cscore': [-0.88080, -1.18084, -0.37888, 0.73545, -1.38502, -1.81534],
+            'ss': [-0.21575, 0.52175, 1.92173, -1.18084, 0.52175, -1.37983],
+            # Note: Explicitly including 'impulsive' here for robustness
+            'impulsive': [-0.71126, -0.21776, -0.07854, -1.09207, -0.57009, -0.71126], 
+            'cannabis': ['CL0', 'CL0', 'CL3', 'CL5', 'CL6', 'CL2'],
+        }
+        df = pd.DataFrame(data)
+
+# Rename columns for the predictor variables
+feature_renames = {
+    'age': 'Age_Score', 'gender': 'Gender_Score',
+    'education': 'Education_Score', 'country': 'Country_Score',
+    'ethnicity': 'Ethnicity_Score', 'nscore': 'Neuroticism',
+    'escore': 'Extraversion', 'oscore': 'Openness',
+    'ascore': 'Agreeableness', 'cscore': 'Conscientiousness',
+    'impulsive': 'Impulsiveness', 
+    'ss': 'Sensation_Seeking'
+}
+# Only rename columns that exist in the DataFrame
+df = df.rename(columns={k: v for k, v in feature_renames.items() if k in df.columns})
+
+# Define the predictor columns to visualize
+# This ensures we only try to plot columns that successfully exist and were renamed
+predictor_cols = [v for k, v in feature_renames.items() if v in df.columns]
+
+# --- 2. BINARY CLASSIFICATION TRANSFORMATION (Cannabis) ---
+
+# Define the binary mapping based on your friend's logic:
+# Non-Users: CL0 (Never Used) and CL1 (Used over a Decade Ago)
+# Users: CL2 to CL6 (Used in Last Decade up to Used in Last Day)
+def map_cannabis_to_binary(consumption_level):
+    if consumption_level in ['CL0', 'CL1']:
+        return 'Non-User (CL0-CL1)'
+    elif consumption_level in ['CL2', 'CL3', 'CL4', 'CL5', 'CL6']:
+        return 'User (CL2-CL6)'
+    return 'Unknown' # Should not happen with valid data
+
+# Apply the mapping to create the new binary target column
+df['Cannabis_Binary'] = df['cannabis'].apply(map_cannabis_to_binary)
+
+# Remove the original 'cannabis' column to avoid confusion
+df.drop('cannabis', axis=1, inplace=True, errors='ignore')
+
+# --- 3. VISUALIZATION LOOP (Violin Plots) ---
+
+print(f"Starting generation of {len(predictor_cols)} Violin Plots...")
+
+# Define the order for the binary target for consistent visualization
+target_order = ['Non-User (CL0-CL1)', 'User (CL2-CL6)']
+
+for col in predictor_cols:
+    plt.figure(figsize=(8, 6))
+    
+    # Create a Violin Plot to compare the distribution of the predictor
+    # across the two binary cannabis groups.
+    sns.violinplot(
+        x='Cannabis_Binary',
+        y=col,
+        data=df,
+        order=target_order,
+        # FIX: Added 'hue' and 'legend=False' to resolve the FutureWarning
+        hue='Cannabis_Binary',
+        legend=False,
+        palette={'Non-User (CL0-CL1)': 'forestgreen', 'User (CL2-CL6)': 'darkorange'},
+        inner='quartile', # Show the quartiles inside the violin
+        linewidth=1.5
+    )
+    
+    plt.title(f'Distribution of {col} by Cannabis User Status', fontsize=14)
+    plt.xlabel('Cannabis User Status', fontsize=12)
+    plt.ylabel(f'{col} Score (Quantified)', fontsize=12)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    
+    # Save the file
+    filename = f'violin_cannabis_vs_{col}.png'
+    plt.tight_layout()
+    plt.savefig(filename)
+    plt.close()
+    print(f"Generated {filename}")
+
+print("\nAll violin plots comparing predictors to Cannabis use have been generated.")

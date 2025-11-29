@@ -1,0 +1,89 @@
+import pandas as pd
+from ucimlrepo import fetch_ucirepo 
+
+# --- 1. DATA LOADING ---
+
+try:
+    # Fetch the dataset
+    drug_consumption_quantified = fetch_ucirepo(id=373) 
+    X = drug_consumption_quantified.data.features 
+    y = drug_consumption_quantified.data.targets 
+    df = pd.concat([X, y], axis=1)
+except Exception as e:
+    print(f"Error fetching data: {e}. Please ensure 'ucimlrepo' is installed.")
+    exit()
+
+# Rename dictionary targeting the 12 raw predictors
+# FIX: 'id' is removed, and 'impuslive' is used as the key.
+feature_renames = {
+    'age': 'Age_Score', 
+    'gender': 'Gender_Score',
+    'education': 'Education_Score', 
+    'country': 'Country_Score', 
+    'ethnicity': 'Ethnicity_Score', 
+    'nscore': 'Neuroticism',
+    'escore': 'Extraversion', 
+    'oscore': 'Openness',
+    'ascore': 'Agreeableness', 
+    'cscore': 'Conscientiousness',
+    'impuslive': 'Impulsiveness',       # CORRECTED KEY from your list
+    'ss': 'Sensation_Seeking'
+}
+
+# 1. Rename the DataFrame columns (using the 12 available predictors)
+existing_renames = {k: v for k, v in feature_renames.items() if k in df.columns}
+df = df.rename(columns=existing_renames)
+
+# 2. Store the list of the 12 cleaned predictor column names
+predictor_cols = list(existing_renames.values())
+# ---------------------------------------------------------------------
+
+# ====================================================================
+# ⭐ 3. BINARY CLASSIFICATION PREPROCESSING ⭐
+# Rule: Non-User (0) = CL0 ('Never Used') OR CL1 ('Used over a Decade Ago')
+# User (1)     = All other categories (CL2 - CL6)
+# ====================================================================
+
+target_drugs = ['alcohol', 'cannabis']
+non_user_codes = ['CL0', 'CL1'] 
+
+for drug in target_drugs:
+    original_col = drug
+    new_col_name = f'{drug}_binary_risk'
+    
+    # Initialize all values to 1 (User/Risk)
+    df[new_col_name] = 1 
+    
+    # Set rows where the original code is CL0 or CL1 to 0 (Non-User/Non-Risk)
+    df.loc[df[original_col].isin(non_user_codes), new_col_name] = 0
+    
+    # Convert the new column to integer type for classification models
+    df[new_col_name] = df[new_col_name].astype(int)
+
+
+# ====================================================================
+# ⭐ 4. ISOLATE AND SAVE DATASETS TO CSV FILES ⭐
+# ====================================================================
+
+print("\n--- Saving Binary Classification Datasets ---")
+
+# --- 4A. Cannabis Binary Classification ---
+target_cannabis = 'cannabis_binary_risk'
+# This file will have 12 predictors + 1 target = 13 columns total
+df_cannabis = df[predictor_cols + [target_cannabis]].copy()
+csv_filename_cannabis = 'cannabis_binary_classification.csv'
+
+df_cannabis.to_csv(csv_filename_cannabis, index=False)
+print(f"Successfully saved {csv_filename_cannabis} ({len(df_cannabis)} rows, {len(df_cannabis.columns)} columns).")
+
+
+# --- 4B. Alcohol Binary Classification ---
+target_alcohol = 'alcohol_binary_risk'
+# This file will have 12 predictors + 1 target = 13 columns total
+df_alcohol = df[predictor_cols + [target_alcohol]].copy()
+csv_filename_alcohol = 'alcohol_binary_classification.csv'
+
+df_alcohol.to_csv(csv_filename_alcohol, index=False)
+print(f"Successfully saved {csv_filename_alcohol} ({len(df_alcohol)} rows, {len(df_alcohol.columns)} columns).")
+
+print("\nProcessing complete. You should now have two complete, correctly structured CSV files.")
