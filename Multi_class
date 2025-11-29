@@ -1,0 +1,89 @@
+import pandas as pd
+from ucimlrepo import fetch_ucirepo 
+import numpy as np
+
+# --- 1. DATA LOADING ---
+
+try:
+    # Fetch the dataset
+    drug_consumption_quantified = fetch_ucirepo(id=373) 
+    X = drug_consumption_quantified.data.features 
+    y = drug_consumption_quantified.data.targets 
+    df = pd.concat([X, y], axis=1)
+except Exception as e:
+    print(f"Error fetching data: {e}. Please ensure 'ucimlrepo' is installed.")
+    exit()
+
+# Rename dictionary targeting the 12 raw predictors
+feature_renames = {
+    'age': 'Age_Score', 
+    'gender': 'Gender_Score',
+    'education': 'Education_Score', 
+    'country': 'Country_Score', 
+    'ethnicity': 'Ethnicity_Score', 
+    'nscore': 'Neuroticism',
+    'escore': 'Extraversion', 
+    'oscore': 'Openness',
+    'ascore': 'Agreeableness', 
+    'cscore': 'Conscientiousness',
+    'impuslive': 'Impulsiveness',       # CORRECTED KEY
+    'ss': 'Sensation_Seeking'
+}
+
+# 1. Rename the DataFrame columns (using the 12 available predictors)
+existing_renames = {k: v for k, v in feature_renames.items() if k in df.columns}
+df = df.rename(columns=existing_renames)
+
+# 2. Store the list of the 12 cleaned predictor column names
+predictor_cols = list(existing_renames.values())
+# ---------------------------------------------------------------------
+
+# ====================================================================
+# ⭐ 3. MULTI-CLASS CLASSIFICATION PREPROCESSING (ALCOHOL & CANNABIS) ⭐
+# Rule: Never (0) = CL0 | Past (1) = CL1-CL3 | Current (2) = CL4-CL6
+# ====================================================================
+
+target_drugs = ['alcohol', 'cannabis']
+
+for drug in target_drugs:
+    original_col = drug
+    new_col_name = f'{drug}_multi_class'
+    
+    # Define conditions and choices for the 3 classes
+    conditions = [
+        df[original_col] == 'CL0',                                    # Class 0: Never Used
+        df[original_col].isin(['CL1', 'CL2', 'CL3']),                 # Class 1: Past Use
+        df[original_col].isin(['CL4', 'CL5', 'CL6'])                  # Class 2: Active Use
+    ]
+    choices = [0, 1, 2]
+
+    # Apply the mapping using np.select
+    df[new_col_name] = np.select(conditions, choices, default=np.nan)
+    # Convert to integer type
+    df[new_col_name] = df[new_col_name].astype(int)
+
+
+# ====================================================================
+# ⭐ 4. ISOLATE AND SAVE DATASETS TO CSV FILES ⭐
+# ====================================================================
+
+print("\n--- Saving Multi-Class Classification Datasets ---")
+
+# --- 4A. Cannabis Multi-Class Classification ---
+target_cannabis = 'cannabis_multi_class'
+df_cannabis = df[predictor_cols + [target_cannabis]].copy()
+csv_filename_cannabis = 'cannabis_multi_class_classification.csv'
+
+df_cannabis.to_csv(csv_filename_cannabis, index=False)
+print(f"Successfully saved {csv_filename_cannabis} ({len(df_cannabis)} rows, {len(df_cannabis.columns)} columns).")
+
+
+# --- 4B. Alcohol Multi-Class Classification ---
+target_alcohol = 'alcohol_multi_class'
+df_alcohol = df[predictor_cols + [target_alcohol]].copy()
+csv_filename_alcohol = 'alcohol_multi_class_classification.csv'
+
+df_alcohol.to_csv(csv_filename_alcohol, index=False)
+print(f"Successfully saved {csv_filename_alcohol} ({len(df_alcohol)} rows, {len(df_alcohol.columns)} columns).")
+
+print("\nProcessing complete. You now have two multi-class CSV files ready for modeling.")
